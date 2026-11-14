@@ -1,0 +1,56 @@
+name: PRIVATE AI BRO Android Build
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source archive
+        run: test -f BRO-source.zip
+      - name: Unpack project
+        run: unzip -q -o BRO-source.zip -d project
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build full, then supported fallbacks
+        working-directory: project
+        run: |
+          if gradle --no-daemon assembleDebug > log-1-full.txt 2>&1; then echo full > variant.txt
+          elif gradle --no-daemon assembleDebug -Pwake=false > log-2-nowake.txt 2>&1; then echo no-wake > variant.txt
+          elif gradle --no-daemon assembleDebug -Pwake=false -Pintel=false > log-3-minimal.txt 2>&1; then echo minimal > variant.txt
+          else echo FAILED > variant.txt; exit 1; fi
+          cat variant.txt
+      - name: Show errors if build failed
+        if: failure()
+        working-directory: project
+        run: |
+          for f in log-*.txt; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            grep -E "^e: |error:|FAILED|What went wrong" -A3 "$f" | head -60 || true
+          done
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: PRIVATE-AI-BRO-build-logs
+          path: |
+            project/log-*.txt
+            project/variant.txt
+          if-no-files-found: ignore
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PRIVATE-AI-BRO-debug-apk
+          path: project/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

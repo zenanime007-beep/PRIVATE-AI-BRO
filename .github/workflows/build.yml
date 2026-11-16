@@ -27,6 +27,20 @@ jobs:
           test -f project/settings.gradle.kts || test -f project/settings.gradle
           echo "Source archive extracted successfully."
 
+      - name: Remove invalid Compose extension import
+        shell: bash
+        run: |
+          set -euo pipefail
+          UI_FILE="project/app/src/main/java/com/privateai/bro/Ui.kt"
+          test -f "$UI_FILE"
+          if grep -q '^import androidx.compose.foundation.layout.matchParentSize$' "$UI_FILE"; then
+            sed -i '/^import androidx\.compose\.foundation\.layout\.matchParentSize$/d' "$UI_FILE"
+            echo "Removed invalid matchParentSize import; BoxScope provides this extension."
+          else
+            echo "No invalid matchParentSize import found. Current imports:"
+            sed -n '1,25p' "$UI_FILE"
+          fi
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:

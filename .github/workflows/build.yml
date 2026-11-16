@@ -26,36 +26,44 @@ jobs:
           unzip -q -o BRO-source.zip -d project
           test -f project/settings.gradle.kts || test -f project/settings.gradle
           echo "Source archive extracted successfully."
-          # Apply maintained source overrides without destroying the original archive.
           if [ -d source ]; then cp -a source/. project/; fi
 
-      - name: Apply verified Kotlin source fixes
+      - name: Apply verified Kotlin source fixes and BRO configuration
         shell: bash
         run: |
           set -euo pipefail
           UI_FILE="project/app/src/main/java/com/privateai/bro/Ui.kt"
           ASSISTANT_FILE="project/app/src/main/java/com/privateai/bro/Assistant.kt"
+          MAIN_FILE="project/app/src/main/java/com/privateai/bro/MainActivity.kt"
+          WAKE_FILE="project/app/src/wake/java/com/privateai/bro/VoskWake.kt"
+          LISTEN_FILE="project/app/src/main/java/com/privateai/bro/ListenService.kt"
+          SCREENS_FILE="project/app/src/main/java/com/privateai/bro/Screens2.kt"
           test -f "$UI_FILE"
           test -f "$ASSISTANT_FILE"
 
-          # matchParentSize is a BoxScope member; it must not be imported as a top-level function.
           sed -i '/^import androidx\.compose\.foundation\.layout\.matchParentSize$/d' "$UI_FILE"
 
-          # A Kotlin property named state generates setState(OrbState) on the JVM.
-          # Rename the conflicting helper method and its call sites.
           if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
             sed -i -E 's/\bsetState[[:space:]]*\(/transitionTo(/g' "$ASSISTANT_FILE"
           fi
-
           if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
             echo "ERROR: conflicting setState method remains."
             exit 1
           fi
-          # Use the liquid-glass home screen and consistent dark surface palette.
-          MAIN_FILE="project/app/src/main/java/com/privateai/bro/MainActivity.kt"
+
           sed -i 's/HomeScreen(st, fg, head)/GlassHomeScreen(st)/' "$MAIN_FILE"
           sed -i 's/val head = if (st == OrbState.IDLE) Sig.Red else fg/val head = Sig.Acid/' "$MAIN_FILE"
-          echo "Verified source fixes and UI overrides applied."
+
+          # The chosen activation phrase is Hey BRO only.
+          sed -i 's/"hey bro", "hello bro", "\[unk\]"/"hey bro", "[unk]"/' "$WAKE_FILE"
+          sed -i 's/if (!t.contains("hey bro") \&\& !t.contains("hello bro")) return false/if (!t.contains("hey bro")) return false/' "$LISTEN_FILE"
+          sed -i 's/Listening for "Hey Bro" and a double clap/Listening for "Hey BRO"/' "$LISTEN_FILE"
+          sed -i 's/Listening for "Hey Bro" \/ "Hello Bro"/Listening for "Hey BRO"/' "$LISTEN_FILE"
+          sed -i 's/HEY BRO · HELLO BRO · DOUBLE CLAP · ONLY YOUR VOICE/HEY BRO · OFFLINE WAKE WORD/' "$SCREENS_FILE"
+          sed -i 's/ALWAYS-ON HEY BRO \/ HELLO BRO/HEY BRO WAKE WORD ONLY/' "$SCREENS_FILE"
+          sed -i 's/Prefs.clapOn = clapOn/Prefs.clapOn = false/' "$SCREENS_FILE"
+          sed -i 's/"DOUBLE CLAP"/"DOUBLE CLAP (DISABLED)"/' "$SCREENS_FILE"
+          echo "BRO wake phrase restricted to Hey BRO."
 
       - name: Set up Java
         uses: actions/setup-java@v4

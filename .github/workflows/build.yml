@@ -93,6 +93,8 @@ jobs:
           )
           if "Prefs.clapOn && clap.feed" in s or "hello bro" in s.lower():
               raise SystemExit("Legacy wake path was not fully removed.")
+          if "Prefs.wakeOn || Prefs.clapOn" in s or "!power.isInteractive" not in s or "power.isInteractive && !fired" not in s:
+              raise SystemExit("Screen-on-only wake guard or Hey BRO-only service config did not apply.")
           p.write_text(s, encoding="utf-8")
 
           p, s = read("Prefs.kt")
@@ -115,6 +117,8 @@ jobs:
               if b < 0:
                   raise SystemExit("Could not safely locate the end of the double-clap settings block.")
               s = s[:a] + s[b:]
+          if "DOUBLE CLAP" in s or "HELLO BRO" in s:
+              raise SystemExit("Legacy wake options remain visible in settings.")
           p.write_text(s, encoding="utf-8")
 
           print("Source checks passed: Hey BRO only, screen-on wake, clap disabled. Existing orb renderer/assets left unchanged.")

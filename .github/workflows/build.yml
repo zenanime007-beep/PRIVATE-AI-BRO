@@ -96,6 +96,18 @@ jobs:
           s = s.replace('get() = sp.getBoolean("clap_on", false)\\n        set(v) = sp.edit().putBoolean("clap_on", v).apply()',
                         'get() = false\\n        set(v) { sp.edit().putBoolean("clap_on", false).apply() }')
           prefs.write_text(s)
+
+          screens = root / "main/java/com/privateai/bro/Screens2.kt"
+          s = screens.read_text()
+          s = s.replace("HEY BRO · HELLO BRO · DOUBLE CLAP · ONLY YOUR VOICE", "HEY BRO · SCREEN ON · WAKE WORD ONLY")
+          s = s.replace("ALWAYS-ON HEY BRO / HELLO BRO", "HEY BRO WAKE WORD")
+          start = s.find('        SwitchRow(\n            "DOUBLE CLAP",')
+          if start >= 0:
+              end = s.find('\n        if (BuildConfig.HAS_WAKE) {', start)
+              if end < 0:
+                  raise SystemExit("Could not locate end of legacy double-clap settings block.")
+              s = s[:start] + s[end:]
+          screens.write_text(s)
           print("Applied Hey BRO-only wake configuration (screen ON only), legacy clap disabled.")
           PY
 

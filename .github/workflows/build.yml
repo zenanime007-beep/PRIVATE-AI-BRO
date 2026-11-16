@@ -26,6 +26,8 @@ jobs:
           unzip -q -o BRO-source.zip -d project
           test -f project/settings.gradle.kts || test -f project/settings.gradle
           echo "Source archive extracted successfully."
+          # Apply maintained source overrides without destroying the original archive.
+          if [ -d source ]; then cp -a source/. project/; fi
 
       - name: Apply verified Kotlin source fixes
         shell: bash
@@ -49,7 +51,11 @@ jobs:
             echo "ERROR: conflicting setState method remains."
             exit 1
           fi
-          echo "Verified source fixes applied."
+          # Use the liquid-glass home screen and consistent dark surface palette.
+          MAIN_FILE="project/app/src/main/java/com/privateai/bro/MainActivity.kt"
+          sed -i 's/HomeScreen(st, fg, head)/GlassHomeScreen(st)/' "$MAIN_FILE"
+          sed -i 's/val head = if (st == OrbState.IDLE) Sig.Red else fg/val head = Sig.Acid/' "$MAIN_FILE"
+          echo "Verified source fixes and UI overrides applied."
 
       - name: Set up Java
         uses: actions/setup-java@v4

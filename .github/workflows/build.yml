@@ -62,9 +62,11 @@ jobs:
           s = s.replace("val head = if (st == OrbState.IDLE) Sig.Red else fg", "val head = Sig.Acid")
           main.write_text(s)
 
-          patch(Path("wake/java/com/privateai/bro/VoskWake.kt"), [
-              ('["hey bro", "hello bro", "[unk]"]', '["hey bro", "[unk]"]')
-          ])
+          wake = root / "wake/java/com/privateai/bro/VoskWake.kt"
+          wake_text = wake.read_text()
+          if r', \\"hello bro\\"' not in wake_text:
+              raise SystemExit("Expected Hello BRO grammar entry not found.")
+          wake.write_text(wake_text.replace(r', \\"hello bro\\"', ""))
           patch(Path("main/java/com/privateai/bro/ListenService.kt"), [
               ("(Prefs.wakeOn || Prefs.clapOn)", "Prefs.wakeOn"),
               ('Prefs.wakeOn && Prefs.clapOn -> "Listening for \\"Hey Bro\\" and a double clap"\n            Prefs.wakeOn -> "Listening for \\"Hey Bro\\" / \\"Hello Bro\\""', 'Prefs.wakeOn -> "Listening for \\"Hey BRO\\""'),

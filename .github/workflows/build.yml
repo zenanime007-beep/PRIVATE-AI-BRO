@@ -1,88 +1,89 @@
 name: PRIVATE AI BRO Android Build
+
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
+
 permissions:
   contents: read
+
 jobs:
   debug-apk:
+    name: Build Android debug APK
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Unpack project
-        run: unzip -q -o BRO-source.zip -d project
-      - uses: actions/setup-java@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify and extract source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f BRO-source.zip
+          mkdir -p project
+          unzip -q -o BRO-source.zip -d project
+          echo "Extracted project files:"
+          find project -maxdepth 3 -type f | head -80
+          test -f project/settings.gradle.kts || test -f project/settings.gradle
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - name: Setup Android SDK
+
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
           packages: platform-tools
-      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Fix Gradle script URL import
+
+      - name: Apply compatibility fixes
+        shell: bash
         run: |
-          sed -i '1i import java.net.URL' project/app/build.gradle.kts
-          sed -i 's/java\.net\.URL(url)/URL(url)/' project/app/build.gradle.kts
-      - name: Fix Compose layout import
-        run: |
-          UI_FILE="$(find project/app/src/main/java -name Ui.kt -print -quit)"
-          if [ -n "$UI_FILE" ] && ! grep -q '^import androidx.compose.foundation.layout.matchParentSize        working-directory: project
-        run: |
-          if gradle --no-daemon assembleDebug > log-1-full.txt 2>&1; then echo full > variant.txt
-          elif gradle --no-daemon assembleDebug -Pwake=false > log-2-nowake.txt 2>&1; then echo no-wake > variant.txt
-          elif gradle --no-daemon assembleDebug -Pwake=false -Pintel=false > log-3-minimal.txt 2>&1; then echo minimal > variant.txt
-          else echo FAILED > variant.txt; exit 1; fi
-          cat variant.txt
-      - name: Show errors if the build failed
-        if: failure()
-        working-directory: project
-        run: |
-          for f in log-*.txt; do echo "=== $f ==="; grep -E "^e: |error:|FAILED|What went wrong" -A3 "$f" | head -60; done
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            project/log-*.txt
-            project/variant.txt
-          if-no-files-found: ignore
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: PRIVATE-AI-BRO-debug-apk
-          path: project/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
- "$UI_FILE"; then
-            sed -i '/^package /a import androidx.compose.foundation.layout.matchParentSize' "$UI_FILE"
+          set -euo pipefail
+          BUILD_FILE="project/app/build.gradle.kts"
+          if [ -f "$BUILD_FILE" ]; then
+            if ! grep -q '^import java.net.URL$' "$BUILD_FILE"; then
+              sed -i '1i import java.net.URL' "$BUILD_FILE"
+            fi
+            sed -i 's/java\.net\.URL(url)/URL(url)/g' "$BUILD_FILE"
           fi
-      - name: Build (full first, then safer fallbacks)
+
+          UI_FILE="$(find project/app/src/main/java -name Ui.kt -print -quit)"
+          if [ -n "$UI_FILE" ]; then
+            if ! grep -q '^import androidx.compose.foundation.layout.matchParentSize$' "$UI_FILE"; then
+              sed -i '/^package .*$/a import androidx.compose.foundation.layout.matchParentSize' "$UI_FILE"
+            fi
+          fi
+
+      - name: Build debug APK
         working-directory: project
+        shell: bash
         run: |
-          if gradle --no-daemon assembleDebug > log-1-full.txt 2>&1; then echo full > variant.txt
-          elif gradle --no-daemon assembleDebug -Pwake=false > log-2-nowake.txt 2>&1; then echo no-wake > variant.txt
-          elif gradle --no-daemon assembleDebug -Pwake=false -Pintel=false > log-3-minimal.txt 2>&1; then echo minimal > variant.txt
-          else echo FAILED > variant.txt; exit 1; fi
-          cat variant.txt
-      - name: Show errors if the build failed
-        if: failure()
-        working-directory: project
-        run: |
-          for f in log-*.txt; do echo "=== $f ==="; grep -E "^e: |error:|FAILED|What went wrong" -A3 "$f" | head -60; done
-      - name: Upload logs
+          set +e
+          gradle --no-daemon assembleDebug > build.log 2>&1
+          BUILD_STATUS=$?
+          set -e
+          cat build.log
+          exit "$BUILD_STATUS"
+
+      - name: Upload build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs
-          path: |
-            project/log-*.txt
-            project/variant.txt
+          name: PRIVATE-AI-BRO-build-logs
+          path: project/build.log
           if-no-files-found: ignore
+
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: PRIVATE-AI-BRO-debug-apk

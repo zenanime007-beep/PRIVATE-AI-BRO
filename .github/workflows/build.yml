@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify source archive
-        run: test -f BRO-source.zip
       - name: Unpack project
         run: unzip -q -o BRO-source.zip -d project
       - uses: actions/setup-java@v4
@@ -22,7 +20,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-      - name: Build full, then supported fallbacks
+      - name: Build (full first, then safer fallbacks)
         working-directory: project
         run: |
           if gradle --no-daemon assembleDebug > log-1-full.txt 2>&1; then echo full > variant.txt
@@ -30,20 +28,16 @@ jobs:
           elif gradle --no-daemon assembleDebug -Pwake=false -Pintel=false > log-3-minimal.txt 2>&1; then echo minimal > variant.txt
           else echo FAILED > variant.txt; exit 1; fi
           cat variant.txt
-      - name: Show errors if build failed
+      - name: Show errors if the build failed
         if: failure()
         working-directory: project
         run: |
-          for f in log-*.txt; do
-            [ -f "$f" ] || continue
-            echo "=== $f ==="
-            grep -E "^e: |error:|FAILED|What went wrong" -A3 "$f" | head -60 || true
-          done
-      - name: Upload build logs
+          for f in log-*.txt; do echo "=== $f ==="; grep -E "^e: |error:|FAILED|What went wrong" -A3 "$f" | head -60; done
+      - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: PRIVATE-AI-BRO-build-logs
+          name: build-logs
           path: |
             project/log-*.txt
             project/variant.txt

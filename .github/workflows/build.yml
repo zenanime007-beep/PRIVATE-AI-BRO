@@ -27,19 +27,29 @@ jobs:
           test -f project/settings.gradle.kts || test -f project/settings.gradle
           echo "Source archive extracted successfully."
 
-      - name: Remove invalid Compose extension import
+      - name: Apply verified Kotlin source fixes
         shell: bash
         run: |
           set -euo pipefail
           UI_FILE="project/app/src/main/java/com/privateai/bro/Ui.kt"
+          ASSISTANT_FILE="project/app/src/main/java/com/privateai/bro/Assistant.kt"
           test -f "$UI_FILE"
-          if grep -q '^import androidx.compose.foundation.layout.matchParentSize$' "$UI_FILE"; then
-            sed -i '/^import androidx\.compose\.foundation\.layout\.matchParentSize$/d' "$UI_FILE"
-            echo "Removed invalid matchParentSize import; BoxScope provides this extension."
-          else
-            echo "No invalid matchParentSize import found. Current imports:"
-            sed -n '1,25p' "$UI_FILE"
+          test -f "$ASSISTANT_FILE"
+
+          # matchParentSize is a BoxScope member; it must not be imported as a top-level function.
+          sed -i '/^import androidx\.compose\.foundation\.layout\.matchParentSize$/d' "$UI_FILE"
+
+          # A Kotlin property named state generates setState(OrbState) on the JVM.
+          # Rename the conflicting helper method and its call sites.
+          if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
+            sed -i -E 's/\bsetState[[:space:]]*\(/transitionTo(/g' "$ASSISTANT_FILE"
           fi
+
+          if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
+            echo "ERROR: conflicting setState method remains."
+            exit 1
+          fi
+          echo "Verified source fixes applied."
 
       - name: Set up Java
         uses: actions/setup-java@v4

@@ -34,81 +34,90 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          root = Path("project/app/src")
-          def patch(path, pairs):
-              p = root / path
-              s = p.read_text()
-              for old, new in pairs:
-                  if old not in s:
-                      raise SystemExit(f"Expected source text not found in {path}: {old[:100]!r}")
-                  s = s.replace(old, new)
-              p.write_text(s)
+          import re
 
-          ui = root / "main/java/com/privateai/bro/Ui.kt"
-          s = ui.read_text()
-          s = s.replace("import androidx.compose.foundation.layout.matchParentSize\\n", "")
-          ui.write_text(s)
+          root = Path("project/app/src/main/java/com/privateai/bro")
 
-          assistant = root / "main/java/com/privateai/bro/Assistant.kt"
-          s = assistant.read_text()
-          s = s.replace("fun setState(", "fun transitionTo(").replace("setState(", "transitionTo(")
-          assistant.write_text(s)
+          def read(name):
+              p = root / name
+              if not p.is_file():
+                  raise SystemExit(f"Required source file missing: {p}")
+              return p, p.read_text(encoding="utf-8")
+
+          # Avoid Kotlin/JVM collision between the Compose state property setter and helper.
+          p, s = read("Assistant.kt")
           if "fun setState(" in s:
-              raise SystemExit("JVM setter clash still present in Assistant.kt")
+              s = s.replace("fun setState(", "fun transitionTo(").replace("setState(", "transitionTo(")
+              p.write_text(s, encoding="utf-8")
+          if "fun setState(" in p.read_text(encoding="utf-8"):
+              raise SystemExit("Assistant state helper rename did not apply.")
 
-          main = root / "main/java/com/privateai/bro/MainActivity.kt"
-          s = main.read_text()
-          s = s.replace("HomeScreen(st, fg, head)", "GlassHomeScreen(st)")
-          s = s.replace("val head = if (st == OrbState.IDLE) Sig.Red else fg", "val head = Sig.Acid")
-          main.write_text(s)
+          # Keep the approved Liquid Glass home screen; do not alter the orb asset/renderer.
+          p, s = read("MainActivity.kt")
+          if "HomeScreen(st, fg, head)" in s:
+              s = s.replace("HomeScreen(st, fg, head)", "GlassHomeScreen(st)")
+          if "val head = if (st == OrbState.IDLE) Sig.Red else fg" in s:
+              s = s.replace("val head = if (st == OrbState.IDLE) Sig.Red else fg", "val head = Sig.Acid")
+          p.write_text(s, encoding="utf-8")
+          if "GlassHomeScreen(st)" not in p.read_text(encoding="utf-8"):
+              raise SystemExit("Glass home screen hook was not installed.")
 
-          wake = root / "wake/java/com/privateai/bro/VoskWake.kt"
-          wake_text = wake.read_text()
-          if r', \\"hello bro\\"' not in wake_text:
-              raise SystemExit("Expected Hello BRO grammar entry not found.")
-          wake.write_text(wake_text.replace(r', \\"hello bro\\"', ""))
-          patch(Path("main/java/com/privateai/bro/ListenService.kt"), [
-              ("(Prefs.wakeOn || Prefs.clapOn)", "Prefs.wakeOn"),
-              ('Prefs.wakeOn && Prefs.clapOn -> "Listening for \\"Hey Bro\\" and a double clap"\n            Prefs.wakeOn -> "Listening for \\"Hey Bro\\" / \\"Hello Bro\\""', 'Prefs.wakeOn -> "Listening for \\"Hey BRO\\""'),
-              ('else -> "Listening for a double clap"', 'else -> "Wake word is disabled"'),
-              ('                if (Prefs.clapOn && clap.feed(buf, n)) {\n                    fired = true\n                    main.post { Metrics.lastWake = "DOUBLE CLAP" }\n                    break\n                }\n', ''),
-              ('if (!t.contains("hey bro") && !t.contains("hello bro")) return false', 'if (!t.contains("hey bro")) return false')
-          ])
+          # Exact wake phrase: Hey BRO only.
+          wake = Path("project/app/src/wake/java/com/privateai/bro/VoskWake.kt")
+          if not wake.is_file():
+              raise SystemExit("Vosk wake source is missing.")
+          ws = wake.read_text(encoding="utf-8")
+          if r', \"hello bro\"' in ws:
+              ws = ws.replace(r', \"hello bro\"', "")
+          elif r'\"hello bro\"' in ws:
+              ws = ws.replace(r', \"hello bro\"', "")
+          if "hello bro" in ws.lower():
+              raise SystemExit("Legacy Hello BRO wake phrase still exists in Vosk grammar.")
+          wake.write_text(ws, encoding="utf-8")
 
-          # Wake only while the display is on. Screen-off wake is deliberately out of scope.
-          listen = root / "main/java/com/privateai/bro/ListenService.kt"
-          s = listen.read_text()
+          p, s = read("ListenService.kt")
+          s = s.replace("(Prefs.wakeOn || Prefs.clapOn)", "Prefs.wakeOn")
+          s = s.replace('Prefs.wakeOn && Prefs.clapOn -> "Listening for \\"Hey Bro\\" and a double clap"\n            Prefs.wakeOn -> "Listening for \\"Hey Bro\\" / \\"Hello Bro\\""', 'Prefs.wakeOn -> "Listening for \\"Hey BRO\\""')
+          s = s.replace('else -> "Listening for a double clap"', 'else -> "Wake word is disabled"')
+          s = re.sub(r'\n\s*if \(Prefs\.clapOn && clap\.feed\(buf, n\)\) \{.*?\n\s*\}\n(?=\s*val hit = engine\?\.feed)', '\n', s, flags=re.S)
+          s = s.replace('if (!t.contains("hey bro") && !t.contains("hello bro")) return false', 'if (!t.contains("hey bro")) return false')
           if "import android.os.PowerManager" not in s:
-              s = s.replace("import android.os.Looper", "import android.os.Looper\\nimport android.os.PowerManager")
+              s = s.replace("import android.os.Looper", "import android.os.Looper\nimport android.os.PowerManager")
           s = s.replace(
-              '        while (alive) {\n            if (Assistant.state != OrbState.IDLE)',
-              '        val power = getSystemService(PowerManager::class.java)\n        while (alive) {\n            if (!power.isInteractive) { sleep(350); continue }\n            if (Assistant.state != OrbState.IDLE)'
+              "        while (alive) {\n            if (Assistant.state != OrbState.IDLE)",
+              "        val power = getSystemService(PowerManager::class.java)\n        while (alive) {\n            if (!power.isInteractive) { sleep(350); continue }\n            if (Assistant.state != OrbState.IDLE)"
           )
           s = s.replace(
-              '            while (alive && !fired && Assistant.state == OrbState.IDLE) {',
-              '            while (alive && power.isInteractive && !fired && Assistant.state == OrbState.IDLE) {'
+              "            while (alive && !fired && Assistant.state == OrbState.IDLE) {",
+              "            while (alive && power.isInteractive && !fired && Assistant.state == OrbState.IDLE) {"
           )
-          listen.write_text(s)
+          if "Prefs.clapOn && clap.feed" in s or "hello bro" in s.lower():
+              raise SystemExit("Legacy wake path was not fully removed.")
+          p.write_text(s, encoding="utf-8")
 
-          # Force the legacy double-clap preference off so an old install cannot reactivate it.
-          prefs = root / "main/java/com/privateai/bro/Prefs.kt"
-          s = prefs.read_text()
-          s = s.replace('get() = sp.getBoolean("clap_on", false)\\n        set(v) = sp.edit().putBoolean("clap_on", v).apply()',
-                        'get() = false\\n        set(v) { sp.edit().putBoolean("clap_on", false).apply() }')
-          prefs.write_text(s)
+          p, s = read("Prefs.kt")
+          s, count = re.subn(
+              r'var clapOn: Boolean\s+get\(\) = sp\.getBoolean\("clap_on", false\)\s+set\(v\) = sp\.edit\(\)\.putBoolean\("clap_on", v\)\.apply\(\)',
+              'var clapOn: Boolean\n        get() = false\n        set(v) { sp.edit().putBoolean("clap_on", false).apply() }',
+              s
+          )
+          if count != 1:
+              raise SystemExit(f"Expected exactly one clap preference block; found {count}.")
+          p.write_text(s, encoding="utf-8")
 
-          screens = root / "main/java/com/privateai/bro/Screens2.kt"
-          s = screens.read_text()
+          p, s = read("Screens2.kt")
           s = s.replace("HEY BRO · HELLO BRO · DOUBLE CLAP · ONLY YOUR VOICE", "HEY BRO · SCREEN ON · WAKE WORD ONLY")
+          s = s.replace("THIS BUILD HAS NO WAKE-WORD ENGINE. DOUBLE CLAP AND ORB TAP STILL WORK.", "WAKE-WORD ENGINE IS NOT INCLUDED IN THIS BUILD.")
           s = s.replace("ALWAYS-ON HEY BRO / HELLO BRO", "HEY BRO WAKE WORD")
-          start = s.find('        SwitchRow(\n            "DOUBLE CLAP",')
-          if start >= 0:
-              end = s.find('\n        if (BuildConfig.HAS_WAKE) {', start)
-              if end < 0:
-                  raise SystemExit("Could not locate end of legacy double-clap settings block.")
-              s = s[:start] + s[end:]
-          screens.write_text(s)
-          print("Applied Hey BRO-only wake configuration (screen ON only), legacy clap disabled.")
+          a = s.find('        SwitchRow(\n            "DOUBLE CLAP",')
+          if a >= 0:
+              b = s.find('\n        if (BuildConfig.HAS_WAKE) {', a)
+              if b < 0:
+                  raise SystemExit("Could not safely locate the end of the double-clap settings block.")
+              s = s[:a] + s[b:]
+          p.write_text(s, encoding="utf-8")
+
+          print("Source checks passed: Hey BRO only, screen-on wake, clap disabled. Existing orb renderer/assets left unchanged.")
           PY
 
       - name: Set up Java

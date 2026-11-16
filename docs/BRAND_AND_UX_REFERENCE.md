@@ -1,7 +1,7 @@
 # PRIVATE AI – BRO Official Visual Identity
 
 ## Authoritative reference
-The user-provided 1536×1536 design board in the project conversation is the authoritative visual reference. Do not replace it with another mascot, orb, palette, or generic AI icon.
+The user's exact original logo/design image is the only approved source of truth. The original image file is not currently present in the repository or available in the active build workspace. Do not fabricate, redraw, replace, or approximate it with another mascot/orb. Exact 3D conversion and in-app asset integration are BLOCKED until the owner re-attaches the original image and it is added to the project assets.
 
 ## Orb identity
 - Transparent glossy glass sphere.
@@ -29,7 +29,7 @@ The user-provided 1536×1536 design board in the project conversation is the aut
 - 2D mark: launcher/adaptive icon, notification, splash and small UI.
 - Animated orb: main app interface and floating assistant.
 - Keep the original orb renderer and map its states to the six visual states.
-- Any 3D-looking rendering must be genuinely animated in-app, not a static mock image.
+- Do not describe the current Canvas orb renderer as a real 3D mesh. Exact 3D conversion requires the original source image and a real 3D asset/rendering pipeline.
 - Provide a lightweight fallback for slower devices.
 
 ## Voice activation

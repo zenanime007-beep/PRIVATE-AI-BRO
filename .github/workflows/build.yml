@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          root = Path("project/app/src/main")
+          root = Path("project/app/src")
           def patch(path, pairs):
               p = root / path
               s = p.read_text()
@@ -44,19 +44,19 @@ jobs:
                   s = s.replace(old, new)
               p.write_text(s)
 
-          ui = root / "java/com/privateai/bro/Ui.kt"
+          ui = root / "main/java/com/privateai/bro/Ui.kt"
           s = ui.read_text()
           s = s.replace("import androidx.compose.foundation.layout.matchParentSize\\n", "")
           ui.write_text(s)
 
-          assistant = root / "java/com/privateai/bro/Assistant.kt"
+          assistant = root / "main/java/com/privateai/bro/Assistant.kt"
           s = assistant.read_text()
           s = s.replace("fun setState(", "fun transitionTo(").replace("setState(", "transitionTo(")
           assistant.write_text(s)
           if "fun setState(" in s:
               raise SystemExit("JVM setter clash still present in Assistant.kt")
 
-          main = root / "java/com/privateai/bro/MainActivity.kt"
+          main = root / "main/java/com/privateai/bro/MainActivity.kt"
           s = main.read_text()
           s = s.replace("HomeScreen(st, fg, head)", "GlassHomeScreen(st)")
           s = s.replace("val head = if (st == OrbState.IDLE) Sig.Red else fg", "val head = Sig.Acid")
@@ -65,7 +65,7 @@ jobs:
           patch(Path("wake/java/com/privateai/bro/VoskWake.kt"), [
               ('["hey bro", "hello bro", "[unk]"]', '["hey bro", "[unk]"]')
           ])
-          patch(Path("java/com/privateai/bro/ListenService.kt"), [
+          patch(Path("main/java/com/privateai/bro/ListenService.kt"), [
               ("(Prefs.wakeOn || Prefs.clapOn)", "Prefs.wakeOn"),
               ('Prefs.wakeOn && Prefs.clapOn -> "Listening for \\"Hey Bro\\" and a double clap"\n            Prefs.wakeOn -> "Listening for \\"Hey Bro\\" / \\"Hello Bro\\""', 'Prefs.wakeOn -> "Listening for \\"Hey BRO\\""'),
               ('else -> "Listening for a double clap"', 'else -> "Wake word is disabled"'),
@@ -74,7 +74,7 @@ jobs:
           ])
 
           # Wake only while the display is on. Screen-off wake is deliberately out of scope.
-          listen = root / "java/com/privateai/bro/ListenService.kt"
+          listen = root / "main/java/com/privateai/bro/ListenService.kt"
           s = listen.read_text()
           if "import android.os.PowerManager" not in s:
               s = s.replace("import android.os.Looper", "import android.os.Looper\\nimport android.os.PowerManager")
@@ -89,7 +89,7 @@ jobs:
           listen.write_text(s)
 
           # Force the legacy double-clap preference off so an old install cannot reactivate it.
-          prefs = root / "java/com/privateai/bro/Prefs.kt"
+          prefs = root / "main/java/com/privateai/bro/Prefs.kt"
           s = prefs.read_text()
           s = s.replace('get() = sp.getBoolean("clap_on", false)\\n        set(v) = sp.edit().putBoolean("clap_on", v).apply()',
                         'get() = false\\n        set(v) { sp.edit().putBoolean("clap_on", false).apply() }')

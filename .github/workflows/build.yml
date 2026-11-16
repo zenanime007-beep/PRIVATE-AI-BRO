@@ -24,9 +24,8 @@ jobs:
           test -f BRO-source.zip
           mkdir -p project
           unzip -q -o BRO-source.zip -d project
-          echo "Extracted project files:"
-          find project -maxdepth 3 -type f | head -80
           test -f project/settings.gradle.kts || test -f project/settings.gradle
+          echo "Source archive extracted successfully."
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -44,7 +43,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Apply compatibility fixes
+      - name: Apply Gradle Kotlin DSL compatibility fix
         shell: bash
         run: |
           set -euo pipefail
@@ -56,23 +55,16 @@ jobs:
             sed -i 's/java\.net\.URL(url)/URL(url)/g' "$BUILD_FILE"
           fi
 
-          UI_FILE="$(find project/app/src/main/java -name Ui.kt -print -quit)"
-          if [ -n "$UI_FILE" ]; then
-            if ! grep -q '^import androidx.compose.foundation.layout.matchParentSize$' "$UI_FILE"; then
-              sed -i '/^package .*$/a import androidx.compose.foundation.layout.matchParentSize' "$UI_FILE"
-            fi
-          fi
-
       - name: Build debug APK
         working-directory: project
         shell: bash
         run: |
           set +e
           gradle --no-daemon assembleDebug > build.log 2>&1
-          BUILD_STATUS=$?
+          result=$?
           set -e
           cat build.log
-          exit "$BUILD_STATUS"
+          exit "$result"
 
       - name: Upload build logs
         if: always()

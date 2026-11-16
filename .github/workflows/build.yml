@@ -81,6 +81,8 @@ jobs:
           s = s.replace('else -> "Listening for a double clap"', 'else -> "Wake word is disabled"')
           s = re.sub(r'\n\s*if \(Prefs\.clapOn && clap\.feed\(buf, n\)\) \{.*?\n\s*\}\n(?=\s*val hit = engine\?\.feed)', '\n', s, flags=re.S)
           s = s.replace('if (!t.contains("hey bro") && !t.contains("hello bro")) return false', 'if (!t.contains("hey bro")) return false')
+          if 'hello bro' in s.lower():
+              raise SystemExit("Legacy Hello BRO phrase remains in the wake acceptance path.")
           if "import android.os.PowerManager" not in s:
               s = s.replace("import android.os.Looper", "import android.os.Looper\nimport android.os.PowerManager")
           s = s.replace(

@@ -1,0 +1,36 @@
+name: PRIVATE AI BRO Source Audit
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'BRO-source.zip'
+      - '.github/workflows/source-audit.yml'
+permissions:
+  contents: read
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Extract source archive
+        run: |
+          set -euo pipefail
+          mkdir -p project
+          unzip -q BRO-source.zip -d project
+          echo '--- PROJECT FILE TREE ---'
+          find project -maxdepth 8 -type f -printf '%p (%s bytes)\n' | sort
+          echo '--- GRADLE CONFIG ---'
+          for f in project/settings.gradle.kts project/build.gradle.kts project/app/build.gradle.kts project/gradle/libs.versions.toml; do
+            if [ -f "$f" ]; then echo "### $f"; sed -n '1,260p' "$f"; fi
+          done
+          echo '--- ANDROID MANIFEST ---'
+          if [ -f project/app/src/main/AndroidManifest.xml ]; then sed -n '1,300p' project/app/src/main/AndroidManifest.xml; fi
+      - name: Upload extracted source for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: PRIVATE-AI-BRO-source-audit
+          path: project/
+          if-no-files-found: error
+          retention-days: 7

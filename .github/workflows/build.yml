@@ -71,7 +71,7 @@ jobs:
               ws = ws.replace(r', \"hello bro\"', "")
           elif r'\"hello bro\"' in ws:
               ws = ws.replace(r', \"hello bro\"', "")
-          if "hello bro" in ws.lower():
+          if re.search(r'\\\"hello bro\\\"', ws, flags=re.I):
               raise SystemExit("Legacy Hello BRO wake phrase still exists in Vosk grammar.")
           wake.write_text(ws, encoding="utf-8")
 

@@ -63,6 +63,7 @@ jobs:
           sed -i 's/ALWAYS-ON HEY BRO \/ HELLO BRO/HEY BRO WAKE WORD ONLY/' "$SCREENS_FILE"
           sed -i 's/Prefs.clapOn = clapOn/Prefs.clapOn = false/' "$SCREENS_FILE"
           sed -i 's/"DOUBLE CLAP"/"DOUBLE CLAP (DISABLED)"/' "$SCREENS_FILE"
+          sed -i 's/clapOn, true, fg/false, false, fg/' "$SCREENS_FILE"
           echo "BRO wake phrase restricted to Hey BRO."
 
       - name: Set up Java

@@ -32,39 +32,70 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          UI_FILE="project/app/src/main/java/com/privateai/bro/Ui.kt"
-          ASSISTANT_FILE="project/app/src/main/java/com/privateai/bro/Assistant.kt"
-          MAIN_FILE="project/app/src/main/java/com/privateai/bro/MainActivity.kt"
-          WAKE_FILE="project/app/src/wake/java/com/privateai/bro/VoskWake.kt"
-          LISTEN_FILE="project/app/src/main/java/com/privateai/bro/ListenService.kt"
-          SCREENS_FILE="project/app/src/main/java/com/privateai/bro/Screens2.kt"
-          test -f "$UI_FILE"
-          test -f "$ASSISTANT_FILE"
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("project/app/src/main")
+          def patch(path, pairs):
+              p = root / path
+              s = p.read_text()
+              for old, new in pairs:
+                  if old not in s:
+                      raise SystemExit(f"Expected source text not found in {path}: {old[:100]!r}")
+                  s = s.replace(old, new)
+              p.write_text(s)
 
-          sed -i '/^import androidx\.compose\.foundation\.layout\.matchParentSize$/d' "$UI_FILE"
+          ui = root / "java/com/privateai/bro/Ui.kt"
+          s = ui.read_text()
+          s = s.replace("import androidx.compose.foundation.layout.matchParentSize\\n", "")
+          ui.write_text(s)
 
-          if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
-            sed -i -E 's/\bsetState[[:space:]]*\(/transitionTo(/g' "$ASSISTANT_FILE"
-          fi
-          if grep -qE 'fun[[:space:]]+setState[[:space:]]*\(' "$ASSISTANT_FILE"; then
-            echo "ERROR: conflicting setState method remains."
-            exit 1
-          fi
+          assistant = root / "java/com/privateai/bro/Assistant.kt"
+          s = assistant.read_text()
+          s = s.replace("fun setState(", "fun transitionTo(").replace("setState(", "transitionTo(")
+          assistant.write_text(s)
+          if "fun setState(" in s:
+              raise SystemExit("JVM setter clash still present in Assistant.kt")
 
-          sed -i 's/HomeScreen(st, fg, head)/GlassHomeScreen(st)/' "$MAIN_FILE"
-          sed -i 's/val head = if (st == OrbState.IDLE) Sig.Red else fg/val head = Sig.Acid/' "$MAIN_FILE"
+          main = root / "java/com/privateai/bro/MainActivity.kt"
+          s = main.read_text()
+          s = s.replace("HomeScreen(st, fg, head)", "GlassHomeScreen(st)")
+          s = s.replace("val head = if (st == OrbState.IDLE) Sig.Red else fg", "val head = Sig.Acid")
+          main.write_text(s)
 
-          # The chosen activation phrase is Hey BRO only.
-          sed -i 's/"hey bro", "hello bro", "\[unk\]"/"hey bro", "[unk]"/' "$WAKE_FILE"
-          sed -i 's/if (!t.contains("hey bro") \&\& !t.contains("hello bro")) return false/if (!t.contains("hey bro")) return false/' "$LISTEN_FILE"
-          sed -i 's/Listening for "Hey Bro" and a double clap/Listening for "Hey BRO"/' "$LISTEN_FILE"
-          sed -i 's/Listening for "Hey Bro" \/ "Hello Bro"/Listening for "Hey BRO"/' "$LISTEN_FILE"
-          sed -i 's/HEY BRO · HELLO BRO · DOUBLE CLAP · ONLY YOUR VOICE/HEY BRO · OFFLINE WAKE WORD/' "$SCREENS_FILE"
-          sed -i 's/ALWAYS-ON HEY BRO \/ HELLO BRO/HEY BRO WAKE WORD ONLY/' "$SCREENS_FILE"
-          sed -i 's/Prefs.clapOn = clapOn/Prefs.clapOn = false/' "$SCREENS_FILE"
-          sed -i 's/"DOUBLE CLAP"/"DOUBLE CLAP (DISABLED)"/' "$SCREENS_FILE"
-          sed -i 's/clapOn, true, fg/false, false, fg/' "$SCREENS_FILE"
-          echo "BRO wake phrase restricted to Hey BRO."
+          patch(Path("wake/java/com/privateai/bro/VoskWake.kt"), [
+              ('["hey bro", "hello bro", "[unk]"]', '["hey bro", "[unk]"]')
+          ])
+          patch(Path("java/com/privateai/bro/ListenService.kt"), [
+              ("(Prefs.wakeOn || Prefs.clapOn)", "Prefs.wakeOn"),
+              ('Prefs.wakeOn && Prefs.clapOn -> "Listening for \\"Hey Bro\\" and a double clap"\n            Prefs.wakeOn -> "Listening for \\"Hey Bro\\" / \\"Hello Bro\\""', 'Prefs.wakeOn -> "Listening for \\"Hey BRO\\""'),
+              ('else -> "Listening for a double clap"', 'else -> "Wake word is disabled"'),
+              ('                if (Prefs.clapOn && clap.feed(buf, n)) {\n                    fired = true\n                    main.post { Metrics.lastWake = "DOUBLE CLAP" }\n                    break\n                }\n', ''),
+              ('if (!t.contains("hey bro") && !t.contains("hello bro")) return false', 'if (!t.contains("hey bro")) return false')
+          ])
+
+          # Wake only while the display is on. Screen-off wake is deliberately out of scope.
+          listen = root / "java/com/privateai/bro/ListenService.kt"
+          s = listen.read_text()
+          if "import android.os.PowerManager" not in s:
+              s = s.replace("import android.os.Looper", "import android.os.Looper\\nimport android.os.PowerManager")
+          s = s.replace(
+              '        while (alive) {\n            if (Assistant.state != OrbState.IDLE)',
+              '        val power = getSystemService(PowerManager::class.java)\n        while (alive) {\n            if (!power.isInteractive) { sleep(350); continue }\n            if (Assistant.state != OrbState.IDLE)'
+          )
+          s = s.replace(
+              '            while (alive && !fired && Assistant.state == OrbState.IDLE) {',
+              '            while (alive && power.isInteractive && !fired && Assistant.state == OrbState.IDLE) {'
+          )
+          listen.write_text(s)
+
+          # Force the legacy double-clap preference off so an old install cannot reactivate it.
+          prefs = root / "java/com/privateai/bro/Prefs.kt"
+          s = prefs.read_text()
+          s = s.replace('get() = sp.getBoolean("clap_on", false)\\n        set(v) = sp.edit().putBoolean("clap_on", v).apply()',
+                        'get() = false\\n        set(v) { sp.edit().putBoolean("clap_on", false).apply() }')
+          prefs.write_text(s)
+          print("Applied Hey BRO-only wake configuration (screen ON only), legacy clap disabled.")
+          PY
 
       - name: Set up Java
         uses: actions/setup-java@v4
